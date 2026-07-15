@@ -1,36 +1,134 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Prateleira
 
-## Getting Started
+SaaS de gestão para mercearias e mercadinhos: estoque com lotes/validade, PDV (dinheiro/PIX/cartão), equipe com papéis e **assinatura Stripe**.
 
-First, run the development server:
+> Fora do escopo atual: NFC-e/NF-e e TEF de maquininha (roadmap).
+
+## Stack
+
+- Next.js 16 (App Router) + React 19 + Tailwind 4
+- Postgres + Prisma 7
+- Auth.js (credentials)
+- Stripe Checkout + Customer Portal + webhooks
+- Uploads: filesystem local (`UPLOAD_DRIVER=local`) ou Vercel Blob (`blob`)
+
+## Setup rápido
+
+### 1. Banco
+
+Com Docker Compose (se tiver o plugin):
+
+```bash
+docker compose up -d
+```
+
+Sem Docker Compose, use Postgres local ou Prisma Dev:
+
+```bash
+npx prisma dev --name prateleira -d
+# anote a URL (porta costuma mudar) e ajuste DATABASE_URL no .env
+# crie o database: CREATE DATABASE prateleira;
+```
+
+### 2. Env
+
+```bash
+cp .env.example .env
+# edite DATABASE_URL, AUTH_SECRET, e chaves Stripe quando for testar cobrança
+```
+
+Gere um secret:
+
+```bash
+openssl rand -base64 32
+```
+
+### 3. Schema + seed
+
+```bash
+npm install
+npx prisma db push
+npm run db:seed
+```
+
+Contas demo:
+
+| E-mail | Senha | Papel |
+|--------|-------|-------|
+| `dono@prateleira.app` | `demo1234` | OWNER |
+| `caixa@prateleira.app` | `demo1234` | CASHIER |
+
+Com `SEED_FORCE_ACTIVE=1`, a org seed entra como `ACTIVE` (útil para demo sem cartão).
+
+### 4. App
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Healthcheck: `GET /api/health`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Stripe
 
-## Learn More
+1. Crie dois Prices recorrentes (BRL) no Dashboard (Essencial / Profissional).
+2. Preencha no `.env`:
 
-To learn more about Next.js, take a look at the following resources:
+```
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PRICE_ESSENCIAL=price_...
+STRIPE_PRICE_PROFISSIONAL=price_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Webhooks locais:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
 
-## Deploy on Vercel
+Copie o `whsec_...` para `STRIPE_WEBHOOK_SECRET`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+4. Fluxo: login dono → `/billing` → Checkout → webhook → `subscriptionStatus=ACTIVE`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Cartões de teste: [Stripe testing](https://docs.stripe.com/testing).
+
+## Planos (limites no código)
+
+| Plano | Lojas | Usuários |
+|-------|-------|----------|
+| Trial / NONE | 1 | 3 |
+| Essencial | 1 | 5 |
+| Profissional | 20 | 50 |
+
+Trial: 14 dias após o cadastro. Sem trial/assinatura válida, o app redireciona para `/billing`.
+
+## Uploads
+
+- Dev: `UPLOAD_DRIVER=local` → arquivos em `public/uploads/products/`
+- Prod: `UPLOAD_DRIVER=blob` + `BLOB_READ_WRITE_TOKEN` (Vercel Blob)
+
+## Deploy (Vercel + Postgres)
+
+1. Postgres gerenciado (Neon / Supabase / Prisma Postgres).
+2. Variáveis de ambiente de produção.
+3. `STRIPE_WEBHOOK_SECRET` do endpoint de produção no Dashboard.
+4. `UPLOAD_DRIVER=blob` e token Blob.
+5. `AUTH_URL` / `AUTH_SECRET` corretos.
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run db:push
+npm run db:seed
+npm run db:studio
+```
+
+## Estrutura útil
+
+- `src/actions/` — server actions (auth, billing, catalog, sales, shops)
+- `src/lib/` — db, auth, stripe, billing gate, upload, stock FIFO
+- `prisma/schema.prisma` — multi-tenant (`Organization` → `Shop` → dados)

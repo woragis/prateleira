@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MembershipRole {
+  OWNER
+  MANAGER
+  CASHIER
+}
+
+enum Plan {
+  NONE
+  ESSENCIAL
+  PROFISSIONAL
+}
+
+enum SubscriptionStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  CARD
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships Membership[]
+  sales       Sale[]
+}
+
+model Organization {
+  id                   String             @id @default(cuid())
+  name                 String
+  slug                 String             @unique
+  trialEndsAt          DateTime
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  plan                 Plan               @default(NONE)
+  subscriptionStatus   SubscriptionStatus @default(TRIALING)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  memberships Membership[]
+  shops       Shop[]
+}
+
+model Membership {
+  id             String         @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MembershipRole
+  createdAt      DateTime       @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Shop {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  slug           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categories   Category[]
+  products     Product[]
+  sales        Sale[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  shopId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([shopId, name])
+  @@index([shopId])
+}
+
+model Product {
+  id         String   @id @default(cuid())
+  shopId     String
+  categoryId String?
+  name       String
+  sku        String?
+  costCents  Int      @default(0)
+  priceCents Int
+  minStock   Int      @default(5)
+  imageUrl   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  lots       Lot[]
+  saleItems  SaleItem[]
+
+  @@index([shopId])
+  @@index([categoryId])
+}
+
+model Lot {
+  id         String    @id @default(cuid())
+  productId  String
+  quantity   Int
+  expiresAt  DateTime?
+  costCents  Int
+  createdAt  DateTime  @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([expiresAt])
+}
+
+model Sale {
+  id            String        @id @default(cuid())
+  shopId        String
+  userId        String
+  totalCents    Int
+  paymentMethod PaymentMethod
+  createdAt     DateTime      @default(now())
+
+  shop  Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items SaleItem[]
+
+  @@index([shopId])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model SaleItem {
+  id             String @id @default(cuid())
+  saleId         String
+  productId      String
+  qty            Int
+  unitPriceCents Int
+  unitCostCents  Int
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId])
+}

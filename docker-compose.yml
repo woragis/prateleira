@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prateleira
+      POSTGRES_PASSWORD: prateleira
+      POSTGRES_DB: prateleira
+    ports:
+      - "5432:5432"
+    volumes:
+      - prateleira_pg:/var/lib/postgresql/data
+
+volumes:
+  prateleira_pg:
